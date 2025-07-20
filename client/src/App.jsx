@@ -142,6 +142,15 @@ function App() {
     }
   }, [visitorEvents])
 
+  // Dynamic chart updates every 5 seconds
+  useEffect(() => {
+    const chartInterval = setInterval(() => {
+      updateVisitorChart()
+    }, 5000) // Update every 5 seconds
+
+    return () => clearInterval(chartInterval)
+  }, [visitorEvents, filteredEvents, isFiltered]) // Re-run when events or filter state changes
+
   // Update duration counters in real-time
   useEffect(() => {
     const interval = setInterval(() => {
@@ -167,38 +176,42 @@ function App() {
   // Update visitor chart data
   const updateVisitorChart = () => {
     const now = new Date()
-    const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000)
     
     // Use filtered events if available, otherwise use all events
     const eventsToUse = isFiltered ? filteredEvents : visitorEvents
-    const recentEvents = eventsToUse.filter(event => 
-      new Date(event.timestamp) > tenMinutesAgo
-    )
     
-    // Group by minute with more accurate time matching
+    // Create dynamic timeline based on real-world time
     const chartData = []
     for (let i = 0; i < 10; i++) {
-      // Calculate time slots from oldest to newest (i=0 is 9 minutes ago, i=9 is current minute)
-      // Ensure current minute is properly included by using floor to minute precision
+      // Calculate time slots based on real-world time progression
+      // i=0 is the most recent completed minute, i=9 is 9 minutes ago
       const currentMinute = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes())
-      const timeSlot = new Date(currentMinute.getTime() - (9 - i) * 60 * 1000)
-      const timeSlotEnd = new Date(timeSlot.getTime() + 60 * 1000)
       
-      const minuteEvents = recentEvents.filter(event => {
+      // For the most recent minute (i=0), we want the previous minute's data
+      // For older minutes, we go back further
+      const targetMinute = new Date(currentMinute.getTime() - (i + 1) * 60 * 1000)
+      const timeSlotStart = new Date(targetMinute.getFullYear(), targetMinute.getMonth(), targetMinute.getDate(), targetMinute.getHours(), targetMinute.getMinutes())
+      const timeSlotEnd = new Date(timeSlotStart.getTime() + 60 * 1000)
+      
+      // Filter events for this specific minute
+      const minuteEvents = eventsToUse.filter(event => {
         const eventTime = new Date(event.timestamp)
-        return eventTime >= timeSlot && eventTime < timeSlotEnd
+        return eventTime >= timeSlotStart && eventTime < timeSlotEnd
       })
       
       // Count unique visitors (sessionIds) instead of total events
       const uniqueVisitors = new Set(minuteEvents.map(event => event.sessionId))
       
       chartData.push({
-        time: timeSlot.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-        count: uniqueVisitors.size
+        time: timeSlotStart.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        count: uniqueVisitors.size,
+        startTime: timeSlotStart,
+        endTime: timeSlotEnd
       })
     }
     
-    setVisitorChart(chartData)
+    // Reverse the array so most recent minute (index 0) appears at the bottom
+    setVisitorChart(chartData.reverse())
   }
 
   // Play notification sound
@@ -368,7 +381,7 @@ function App() {
 
           {/* Visitor Chart */}
           <section className="visitor-chart">
-            <h2>Visitors (Last 10 Minutes)</h2>
+            <h2>Visitors (Last 10 Minutes - Live)</h2>
             <div className="chart-container">
               {visitorChart.length === 0 || visitorChart.every(data => data.count === 0) ? (
                 <div className="chart-empty">
@@ -403,7 +416,7 @@ function App() {
                   <div className="chart-legend">
                     <div className="legend-item">
                       <span className="legend-color" style={{backgroundColor: '#3498db'}}></span>
-                      <span>Visitors per minute</span>
+                      <span>Visitors per minute (completed)</span>
                     </div>
                   </div>
                 </>
